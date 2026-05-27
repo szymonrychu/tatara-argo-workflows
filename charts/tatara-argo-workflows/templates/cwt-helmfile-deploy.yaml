@@ -25,6 +25,14 @@ spec:
             storage: 2Gi
   templates:
     - name: main
+      inputs:
+        parameters:
+          - name: repo
+          - name: ref
+          - name: sha
+          - { name: helmfileDir, default: "." }
+          - { name: provider,    default: "" }
+          - { name: action,      default: "" }
       steps:
         - - name: report-pending
             templateRef:
@@ -33,18 +41,30 @@ spec:
               clusterScope: true
             arguments:
               parameters:
-                - { name: repo,        value: "{{`{{workflow.parameters.repo}}`}}" }
-                - { name: sha,         value: "{{`{{workflow.parameters.sha}}`}}" }
+                - { name: repo,        value: "{{`{{inputs.parameters.repo}}`}}" }
+                - { name: sha,         value: "{{`{{inputs.parameters.sha}}`}}" }
                 - { name: state,       value: "pending" }
                 - { name: context,     value: "tatara/deploy" }
                 - { name: description, value: "running helmfile sync" }
                 - { name: targetUrl,   value: "https://workflows.szymonrichert.pl/workflows/{{`{{workflow.namespace}}`}}/{{`{{workflow.name}}`}}" }
         - - name: clone
             template: clone
+            arguments:
+              parameters:
+                - { name: repo, value: "{{`{{inputs.parameters.repo}}`}}" }
+                - { name: sha,  value: "{{`{{inputs.parameters.sha}}`}}" }
         - - name: sync
             template: sync
+            arguments:
+              parameters:
+                - { name: ref,         value: "{{`{{inputs.parameters.ref}}`}}" }
+                - { name: helmfileDir, value: "{{`{{inputs.parameters.helmfileDir}}`}}" }
 
     - name: clone
+      inputs:
+        parameters:
+          - name: repo
+          - name: sha
       container:
         image: {{ .Values.images.git | quote }}
         workingDir: /workspace
@@ -58,14 +78,18 @@ spec:
         args:
           - |
             set -eux
-            git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{`{{workflow.parameters.repo}}`}}" src
+            git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{`{{inputs.parameters.repo}}`}}" src
             cd src
-            git fetch --depth=1 origin "{{`{{workflow.parameters.sha}}`}}" || true
-            git checkout "{{`{{workflow.parameters.sha}}`}}"
+            git fetch --depth=1 origin "{{`{{inputs.parameters.sha}}`}}" || true
+            git checkout "{{`{{inputs.parameters.sha}}`}}"
         volumeMounts:
           - { name: workspace, mountPath: /workspace }
 
     - name: sync
+      inputs:
+        parameters:
+          - name: ref
+          - name: helmfileDir
       container:
         image: {{ .Values.images.helmfile | quote }}
         workingDir: /workspace/src
@@ -92,10 +116,10 @@ spec:
             apk add --no-cache gnupg
             echo "$GPG_PRIVATE_RSA_B64" | base64 -d | gpg --batch --import
             echo "${HARBOR_PASSWORD}" | helm registry login -u "${HARBOR_USERNAME}" --password-stdin {{ .Values.harbor.registry }}
-            REF="{{`{{workflow.parameters.ref}}`}}"
+            REF="{{`{{inputs.parameters.ref}}`}}"
             TAG_V="${REF#refs/tags/}"
             TAG_PLAIN="${TAG_V#v}"
-            cd /workspace/src/"{{`{{workflow.parameters.helmfileDir}}`}}"
+            cd /workspace/src/"{{`{{inputs.parameters.helmfileDir}}`}}"
             helmfile -e default sync --args "--force-conflicts --set image.tag=${TAG_PLAIN}"
         volumeMounts:
           - { name: workspace, mountPath: /workspace }

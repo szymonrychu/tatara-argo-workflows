@@ -25,6 +25,14 @@ spec:
             storage: 4Gi
   templates:
     - name: main
+      inputs:
+        parameters:
+          - name: repo
+          - name: ref
+          - name: sha
+          - name: imageName
+          - { name: provider, default: "" }
+          - { name: action,   default: "" }
       steps:
         - - name: report-pending
             templateRef:
@@ -33,18 +41,31 @@ spec:
               clusterScope: true
             arguments:
               parameters:
-                - { name: repo,        value: "{{`{{workflow.parameters.repo}}`}}" }
-                - { name: sha,         value: "{{`{{workflow.parameters.sha}}`}}" }
+                - { name: repo,        value: "{{`{{inputs.parameters.repo}}`}}" }
+                - { name: sha,         value: "{{`{{inputs.parameters.sha}}`}}" }
                 - { name: state,       value: "pending" }
                 - { name: context,     value: "tatara/container" }
                 - { name: description, value: "building amd64 image" }
                 - { name: targetUrl,   value: "https://workflows.szymonrichert.pl/workflows/{{`{{workflow.namespace}}`}}/{{`{{workflow.name}}`}}" }
         - - name: clone
             template: clone
+            arguments:
+              parameters:
+                - { name: repo, value: "{{`{{inputs.parameters.repo}}`}}" }
+                - { name: sha,  value: "{{`{{inputs.parameters.sha}}`}}" }
         - - name: build-push
             template: build-push
+            arguments:
+              parameters:
+                - { name: repo,      value: "{{`{{inputs.parameters.repo}}`}}" }
+                - { name: ref,       value: "{{`{{inputs.parameters.ref}}`}}" }
+                - { name: imageName, value: "{{`{{inputs.parameters.imageName}}`}}" }
 
     - name: clone
+      inputs:
+        parameters:
+          - name: repo
+          - name: sha
       container:
         image: {{ .Values.images.git | quote }}
         workingDir: /workspace
@@ -58,14 +79,19 @@ spec:
         args:
           - |
             set -eux
-            git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{`{{workflow.parameters.repo}}`}}" src
+            git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{`{{inputs.parameters.repo}}`}}" src
             cd src
-            git fetch --depth=1 origin "{{`{{workflow.parameters.sha}}`}}" || true
-            git checkout "{{`{{workflow.parameters.sha}}`}}"
+            git fetch --depth=1 origin "{{`{{inputs.parameters.sha}}`}}" || true
+            git checkout "{{`{{inputs.parameters.sha}}`}}"
         volumeMounts:
           - { name: workspace, mountPath: /workspace }
 
     - name: build-push
+      inputs:
+        parameters:
+          - name: repo
+          - name: ref
+          - name: imageName
       container:
         image: {{ .Values.images.buildkit | quote }}
         workingDir: /workspace/src
@@ -89,10 +115,10 @@ spec:
             cat > ~/.docker/config.json <<JSON
             {"auths":{"{{ .Values.harbor.registry }}":{"auth":"${B64}"}}}
             JSON
-            REF="{{`{{workflow.parameters.ref}}`}}"
+            REF="{{`{{inputs.parameters.ref}}`}}"
             TAG_V="${REF#refs/tags/}"
             TAG_PLAIN="${TAG_V#v}"
-            IMG="{{ .Values.harbor.registry }}/{{`{{workflow.parameters.imageName}}`}}"
+            IMG="{{ .Values.harbor.registry }}/{{`{{inputs.parameters.imageName}}`}}"
             buildctl-daemonless.sh build \
               --frontend dockerfile.v0 \
               --local context=. \

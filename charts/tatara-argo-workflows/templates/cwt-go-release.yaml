@@ -24,6 +24,13 @@ spec:
             storage: 4Gi
   templates:
     - name: main
+      inputs:
+        parameters:
+          - name: repo
+          - name: ref
+          - name: sha
+          - { name: provider, default: "" }
+          - { name: action,   default: "" }
       steps:
         - - name: report-pending
             templateRef:
@@ -32,18 +39,29 @@ spec:
               clusterScope: true
             arguments:
               parameters:
-                - { name: repo,        value: "{{`{{workflow.parameters.repo}}`}}" }
-                - { name: sha,         value: "{{`{{workflow.parameters.sha}}`}}" }
+                - { name: repo,        value: "{{`{{inputs.parameters.repo}}`}}" }
+                - { name: sha,         value: "{{`{{inputs.parameters.sha}}`}}" }
                 - { name: state,       value: "pending" }
                 - { name: context,     value: "tatara/release" }
                 - { name: description, value: "running goreleaser" }
                 - { name: targetUrl,   value: "https://workflows.szymonrichert.pl/workflows/{{`{{workflow.namespace}}`}}/{{`{{workflow.name}}`}}" }
         - - name: clone
             template: clone-full
+            arguments:
+              parameters:
+                - { name: repo, value: "{{`{{inputs.parameters.repo}}`}}" }
+                - { name: sha,  value: "{{`{{inputs.parameters.sha}}`}}" }
         - - name: goreleaser
             template: goreleaser
+            arguments:
+              parameters:
+                - { name: ref, value: "{{`{{inputs.parameters.ref}}`}}" }
 
     - name: clone-full
+      inputs:
+        parameters:
+          - name: repo
+          - name: sha
       container:
         image: {{ .Values.images.git | quote }}
         workingDir: /workspace
@@ -57,14 +75,17 @@ spec:
         args:
           - |
             set -eux
-            git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/{{`{{workflow.parameters.repo}}`}}" src
+            git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/{{`{{inputs.parameters.repo}}`}}" src
             cd src
             git fetch --tags
-            git checkout "{{`{{workflow.parameters.sha}}`}}"
+            git checkout "{{`{{inputs.parameters.sha}}`}}"
         volumeMounts:
           - { name: workspace, mountPath: /workspace }
 
     - name: goreleaser
+      inputs:
+        parameters:
+          - name: ref
       container:
         image: {{ .Values.images.goreleaser | quote }}
         workingDir: /workspace/src
@@ -95,7 +116,7 @@ spec:
             cat > ~/.docker/config.json <<JSON
             {"auths":{"{{ .Values.harbor.registry }}":{"auth":"${B64}"}}}
             JSON
-            REF="{{`{{workflow.parameters.ref}}`}}"
+            REF="{{`{{inputs.parameters.ref}}`}}"
             export GORELEASER_CURRENT_TAG="${REF#refs/tags/}"
             goreleaser release --clean
         volumeMounts:

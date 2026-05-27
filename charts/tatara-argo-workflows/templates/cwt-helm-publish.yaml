@@ -26,6 +26,15 @@ spec:
             storage: 2Gi
   templates:
     - name: main
+      inputs:
+        parameters:
+          - name: repo
+          - name: ref
+          - name: sha
+          - name: chartDir
+          - name: chartName
+          - { name: provider, default: "" }
+          - { name: action,   default: "" }
       steps:
         - - name: report-pending
             templateRef:
@@ -34,18 +43,31 @@ spec:
               clusterScope: true
             arguments:
               parameters:
-                - { name: repo,        value: "{{`{{workflow.parameters.repo}}`}}" }
-                - { name: sha,         value: "{{`{{workflow.parameters.sha}}`}}" }
+                - { name: repo,        value: "{{`{{inputs.parameters.repo}}`}}" }
+                - { name: sha,         value: "{{`{{inputs.parameters.sha}}`}}" }
                 - { name: state,       value: "pending" }
                 - { name: context,     value: "tatara/chart" }
                 - { name: description, value: "packaging chart" }
                 - { name: targetUrl,   value: "https://workflows.szymonrichert.pl/workflows/{{`{{workflow.namespace}}`}}/{{`{{workflow.name}}`}}" }
         - - name: clone
             template: clone
+            arguments:
+              parameters:
+                - { name: repo, value: "{{`{{inputs.parameters.repo}}`}}" }
+                - { name: sha,  value: "{{`{{inputs.parameters.sha}}`}}" }
         - - name: package-push
             template: package-push
+            arguments:
+              parameters:
+                - { name: ref,       value: "{{`{{inputs.parameters.ref}}`}}" }
+                - { name: chartDir,  value: "{{`{{inputs.parameters.chartDir}}`}}" }
+                - { name: chartName, value: "{{`{{inputs.parameters.chartName}}`}}" }
 
     - name: clone
+      inputs:
+        parameters:
+          - name: repo
+          - name: sha
       container:
         image: {{ .Values.images.git | quote }}
         workingDir: /workspace
@@ -59,14 +81,19 @@ spec:
         args:
           - |
             set -eux
-            git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{`{{workflow.parameters.repo}}`}}" src
+            git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{`{{inputs.parameters.repo}}`}}" src
             cd src
-            git fetch --depth=1 origin "{{`{{workflow.parameters.sha}}`}}" || true
-            git checkout "{{`{{workflow.parameters.sha}}`}}"
+            git fetch --depth=1 origin "{{`{{inputs.parameters.sha}}`}}" || true
+            git checkout "{{`{{inputs.parameters.sha}}`}}"
         volumeMounts:
           - { name: workspace, mountPath: /workspace }
 
     - name: package-push
+      inputs:
+        parameters:
+          - name: ref
+          - name: chartDir
+          - name: chartName
       container:
         image: {{ .Values.images.helm | quote }}
         workingDir: /workspace/src
@@ -86,9 +113,9 @@ spec:
           - |
             set -eux
             apk add --no-cache sed >/dev/null
-            CHART_DIR="{{`{{workflow.parameters.chartDir}}`}}"
-            CHART_NAME="{{`{{workflow.parameters.chartName}}`}}"
-            REF="{{`{{workflow.parameters.ref}}`}}"
+            CHART_DIR="{{`{{inputs.parameters.chartDir}}`}}"
+            CHART_NAME="{{`{{inputs.parameters.chartName}}`}}"
+            REF="{{`{{inputs.parameters.ref}}`}}"
             TAG_V="${REF#refs/tags/}"
             VER="${TAG_V#v}"
             sed -i "s/^version:.*/version: ${VER}/"     "${CHART_DIR}/Chart.yaml"
