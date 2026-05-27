@@ -14,45 +14,179 @@ spec:
       - { name: sha,      value: "" }
       - { name: provider, value: "" }
       - { name: action,   value: "" }
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteMany]
+        storageClassName: rook-ceph-rwx
+        resources:
+          requests:
+            storage: 4Gi
   templates:
     - name: main
       dag:
         tasks:
+          - name: report-pending
+            template: report-pending
+          - name: clone
+            depends: report-pending
+            template: clone
           - name: container-build
-            templateRef:
-              name: tatara-container-build
-              template: main
-              clusterScope: true
-            arguments:
-              parameters:
-                - { name: repo,      value: "{{`{{workflow.parameters.repo}}`}}" }
-                - { name: ref,       value: "{{`{{workflow.parameters.ref}}`}}" }
-                - { name: sha,       value: "{{`{{workflow.parameters.sha}}`}}" }
-                - { name: imageName, value: "containers/tatara-memory" }
+            depends: clone
+            template: container-build
           - name: helm-publish
-            templateRef:
-              name: tatara-helm-publish
-              template: main
-              clusterScope: true
-            arguments:
-              parameters:
-                - { name: repo,      value: "{{`{{workflow.parameters.repo}}`}}" }
-                - { name: ref,       value: "{{`{{workflow.parameters.ref}}`}}" }
-                - { name: sha,       value: "{{`{{workflow.parameters.sha}}`}}" }
-                - { name: chartDir,  value: "charts/tatara-memory" }
-                - { name: chartName, value: "tatara-memory" }
+            depends: clone
+            template: helm-publish
           - name: helmfile-deploy
-            depends: "container-build && helm-publish"
+            depends: container-build && helm-publish
+            template: helmfile-deploy
+
+    - name: report-pending
+      steps:
+        - - name: post
             templateRef:
-              name: tatara-helmfile-deploy
-              template: main
+              name: tatara-github-status
+              template: report
               clusterScope: true
             arguments:
               parameters:
                 - { name: repo,        value: "{{`{{workflow.parameters.repo}}`}}" }
-                - { name: ref,         value: "{{`{{workflow.parameters.ref}}`}}" }
                 - { name: sha,         value: "{{`{{workflow.parameters.sha}}`}}" }
-                - { name: helmfileDir, value: "." }
+                - { name: state,       value: "pending" }
+                - { name: context,     value: "tatara/tag-pipeline" }
+                - { name: description, value: "container build + chart publish + deploy" }
+                - { name: targetUrl,   value: "https://workflows.szymonrichert.pl/workflows/{{`{{workflow.namespace}}`}}/{{`{{workflow.name}}`}}" }
+
+    - name: clone
+      container:
+        image: {{ .Values.images.git | quote }}
+        workingDir: /workspace
+        command: [sh, -c]
+        env:
+          - name: GITHUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-status-token
+                key: GITHUB_TOKEN
+        args:
+          - |
+            set -eux
+            git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/{{`{{workflow.parameters.repo}}`}}" src
+            cd src
+            git fetch --depth=1 origin "{{`{{workflow.parameters.sha}}`}}" || true
+            git checkout "{{`{{workflow.parameters.sha}}`}}"
+        volumeMounts:
+          - { name: workspace, mountPath: /workspace }
+
+    - name: container-build
+      container:
+        image: {{ .Values.images.buildkit | quote }}
+        workingDir: /workspace/src
+        command: [sh, -c]
+        env:
+          - name: HARBOR_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: harbor-robot
+                key: username
+          - name: HARBOR_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: harbor-robot
+                key: password
+        args:
+          - |
+            set -eux
+            mkdir -p ~/.docker
+            B64=$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_PASSWORD" | base64 -w0)
+            cat > ~/.docker/config.json <<JSON
+            {"auths":{"{{ .Values.harbor.registry }}":{"auth":"${B64}"}}}
+            JSON
+            REF="{{`{{workflow.parameters.ref}}`}}"
+            TAG_V="${REF#refs/tags/}"
+            TAG_PLAIN="${TAG_V#v}"
+            IMG="{{ .Values.harbor.registry }}/containers/tatara-memory"
+            buildctl-daemonless.sh build \
+              --frontend dockerfile.v0 \
+              --local context=. \
+              --local dockerfile=. \
+              --opt platform=linux/amd64 \
+              --output type=image,\"name=${IMG}:${TAG_V},${IMG}:${TAG_PLAIN}\",push=true
+        securityContext:
+          seccompProfile:
+            type: Unconfined
+        volumeMounts:
+          - { name: workspace, mountPath: /workspace }
+
+    - name: helm-publish
+      container:
+        image: {{ .Values.images.helm | quote }}
+        workingDir: /workspace/src
+        command: [sh, -c]
+        env:
+          - name: HARBOR_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: harbor-robot
+                key: username
+          - name: HARBOR_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: harbor-robot
+                key: password
+        args:
+          - |
+            set -eux
+            apk add --no-cache sed >/dev/null
+            REF="{{`{{workflow.parameters.ref}}`}}"
+            TAG_V="${REF#refs/tags/}"
+            VER="${TAG_V#v}"
+            CHART_DIR="charts/tatara-memory"
+            mkdir -p /workspace/chart-work
+            cp -r "${CHART_DIR}/." /workspace/chart-work/
+            sed -i "s/^version:.*/version: ${VER}/"            /workspace/chart-work/Chart.yaml
+            sed -i "s/^appVersion:.*/appVersion: \"${VER}\"/"  /workspace/chart-work/Chart.yaml
+            helm dependency update /workspace/chart-work
+            helm package /workspace/chart-work -d /workspace
+            echo "${HARBOR_PASSWORD}" | helm registry login -u "${HARBOR_USERNAME}" --password-stdin {{ .Values.harbor.registry }}
+            helm push "/workspace/tatara-memory-${VER}.tgz" "oci://{{ .Values.harbor.registry }}/charts"
+        volumeMounts:
+          - { name: workspace, mountPath: /workspace }
+
+    - name: helmfile-deploy
+      container:
+        image: {{ .Values.images.helmfile | quote }}
+        workingDir: /workspace/src
+        command: [sh, -c]
+        env:
+          - name: HARBOR_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: harbor-robot
+                key: username
+          - name: HARBOR_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: harbor-robot
+                key: password
+          - name: GPG_PRIVATE_RSA_B64
+            valueFrom:
+              secretKeyRef:
+                name: gpg-key
+                key: GPG_PRIVATE_RSA_B64
+        args:
+          - |
+            set -eux
+            apk add --no-cache gnupg
+            echo "$GPG_PRIVATE_RSA_B64" | base64 -d | gpg --batch --import
+            echo "${HARBOR_PASSWORD}" | helm registry login -u "${HARBOR_USERNAME}" --password-stdin {{ .Values.harbor.registry }}
+            REF="{{`{{workflow.parameters.ref}}`}}"
+            TAG_V="${REF#refs/tags/}"
+            TAG_PLAIN="${TAG_V#v}"
+            helmfile -e default sync --args "--force-conflicts --set image.tag=${TAG_PLAIN}"
+        volumeMounts:
+          - { name: workspace, mountPath: /workspace }
 
     - name: report-exit
       steps:

@@ -20,7 +20,8 @@ spec:
     - metadata:
         name: workspace
       spec:
-        accessModes: [ReadWriteOnce]
+        accessModes: [ReadWriteMany]
+        storageClassName: rook-ceph-rwx
         resources:
           requests:
             storage: 2Gi
