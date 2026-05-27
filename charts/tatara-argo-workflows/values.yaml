@@ -12,7 +12,7 @@ images:
   golangciLint: golangci/golangci-lint:v2.11.4
   go: golang:1.25
   goreleaser: goreleaser/goreleaser:v2.5.1
-  kaniko: gcr.io/kaniko-project/executor:v1.23.2
+  kaniko: gcr.io/kaniko-project/executor:v1.23.2-debug
   helm: alpine/helm:3.16.2
   helmfile: ghcr.io/helmfile/helmfile:v0.169.1
   alpine: alpine:3.20
