@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: tatara-github-status
+  labels:
+    {{- include "tatara-argo-workflows.labels" . | nindent 4 }}
+spec:
+  entrypoint: report
+  arguments:
+    parameters:
+      - { name: repo,        value: "" }
+      - { name: sha,         value: "" }
+      - { name: state,       value: "pending" }
+      - { name: context,     value: "tatara/unknown" }
+      - { name: description, value: "" }
+      - { name: targetUrl,   value: "" }
+  templates:
+    - name: report
+      inputs:
+        parameters:
+          - name: repo
+          - name: sha
+          - name: state
+          - name: context
+          - name: description
+          - name: targetUrl
+      container:
+        image: {{ .Values.images.alpine | quote }}
+        command: [sh, -c]
+        env:
+          - name: GITHUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-status-token
+                key: GITHUB_TOKEN
+        args:
+          - |
+            set -eu
+            apk add --no-cache curl jq >/dev/null
+            case "{{`{{inputs.parameters.state}}`}}" in
+              Succeeded) STATE=success ;;
+              Failed)    STATE=failure ;;
+              Error)     STATE=error   ;;
+              pending|Running) STATE=pending ;;
+              *) STATE="{{`{{inputs.parameters.state}}`}}" ;;
+            esac
+            BODY=$(jq -n \
+              --arg state "$STATE" \
+              --arg context "{{`{{inputs.parameters.context}}`}}" \
+              --arg description "{{`{{inputs.parameters.description}}`}}" \
+              --arg target_url "{{`{{inputs.parameters.targetUrl}}`}}" \
+              '{state:$state, context:$context, description:$description, target_url:$target_url}')
+            HTTP_CODE=$(curl -sS -o /tmp/resp.json -w '%{http_code}' \
+              -X POST \
+              -H "Authorization: token ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -d "$BODY" \
+              "{{ .Values.github.apiBase }}/repos/{{`{{inputs.parameters.repo}}`}}/statuses/{{`{{inputs.parameters.sha}}`}}")
+            if [ "$HTTP_CODE" != "201" ]; then
+              echo "github status POST failed: HTTP $HTTP_CODE" >&2
+              cat /tmp/resp.json >&2
+              exit 1
+            fi
+            echo "github status posted: $STATE for {{`{{inputs.parameters.context}}`}}"
