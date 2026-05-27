@@ -64,6 +64,8 @@ spec:
         workingDir: /workspace/src
         command: [sh, -c]
         env:
+          - name: GOTOOLCHAIN
+            value: auto
           - name: GITHUB_TOKEN
             valueFrom:
               secretKeyRef:
