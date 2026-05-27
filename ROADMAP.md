@@ -9,7 +9,7 @@ Statuses: `planned`, `in progress`, `shipped`.
 
 ## v0.1.0 - phase 5 ship
 
-**Status:** in progress
+**Status:** in progress (Wave 2 shipped 2026-05-27; Waves 3-5 remaining)
 
 Seven ClusterWorkflowTemplates + 3 ns-scoped Secrets in `tatara`. Onboarding
 declared in infra (`events.github.repos`).

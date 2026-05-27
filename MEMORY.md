@@ -16,7 +16,7 @@ Format: `YYYY-MM-DD - decision/finding`
 
 ## Dead-ends / things tried that did not work
 
-*(nothing yet)*
+2026-05-27 - gitleaks generic-api-key rule false-positive on `key: GPG_PRIVATE_RSA_B64` in secretKeyRef; added .gitleaks.toml allowlist for that path+regex.
 
 ## Open questions
 
