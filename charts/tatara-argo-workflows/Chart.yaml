@@ -1,0 +1,9 @@
+apiVersion: v2
+name: tatara-argo-workflows
+description: Argo Workflows CI/CD substrate for the tatara platform.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: Szymon Richert
+    email: szymon.rychu@gmail.com

@@ -1,0 +1,17 @@
+namespace: tatara
+
+harbor:
+  registry: harbor.szymonrichert.pl
+
+github:
+  apiBase: https://api.github.com
+
+images:
+  git: alpine/git:v2.45.2
+  golangciLint: golangci/golangci-lint:v2.11.4
+  go: golang:1.25
+  goreleaser: goreleaser/goreleaser:v2.4.4
+  buildkit: moby/buildkit:v0.17.0-rootless
+  helm: alpine/helm:3.16.2
+  helmfile: ghcr.io/helmfile/helmfile:v0.169.1
+  alpine: alpine:3.20
