@@ -48,10 +48,16 @@ spec:
         image: {{ .Values.images.git | quote }}
         workingDir: /workspace
         command: [sh, -c]
+        env:
+          - name: GITHUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-status-token
+                key: GITHUB_TOKEN
         args:
           - |
             set -eux
-            git clone "https://github.com/{{`{{workflow.parameters.repo}}`}}" src
+            git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/{{`{{workflow.parameters.repo}}`}}" src
             cd src
             git fetch --tags
             git checkout "{{`{{workflow.parameters.sha}}`}}"
