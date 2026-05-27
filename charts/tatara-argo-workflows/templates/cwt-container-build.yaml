@@ -94,9 +94,9 @@ spec:
           - name: ref
           - name: imageName
       container:
-        image: {{ .Values.images.buildkit | quote }}
+        image: {{ .Values.images.kaniko | quote }}
         workingDir: /workspace/src
-        command: [sh, -c]
+        command: [/busybox/sh, -c]
         env:
           - name: HARBOR_USERNAME
             valueFrom:
@@ -110,25 +110,23 @@ spec:
                 key: password
         args:
           - |
-            set -eux
-            mkdir -p ~/.docker
-            B64=$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_PASSWORD" | base64 -w0)
-            cat > ~/.docker/config.json <<JSON
+            set -eu
+            mkdir -p /kaniko/.docker
+            { set +x; B64=$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_PASSWORD" | base64 -w0); } 2>/dev/null
+            cat > /kaniko/.docker/config.json <<JSON
             {"auths":{"{{ .Values.harbor.registry }}":{"auth":"${B64}"}}}
             JSON
             REF="{{`{{inputs.parameters.ref}}`}}"
             TAG_V="${REF#refs/tags/}"
             TAG_PLAIN="${TAG_V#v}"
             IMG="{{ .Values.harbor.registry }}/{{`{{inputs.parameters.imageName}}`}}"
-            buildctl-daemonless.sh build \
-              --frontend dockerfile.v0 \
-              --local context=. \
-              --local dockerfile=. \
-              --opt platform=linux/amd64 \
-              --output type=image,\"name=${IMG}:${TAG_V},${IMG}:${TAG_PLAIN}\",push=true
-        securityContext:
-          seccompProfile:
-            type: Unconfined
+            /kaniko/executor \
+              --context=dir:///workspace/src \
+              --dockerfile=/workspace/src/Dockerfile \
+              --destination="${IMG}:${TAG_V}" \
+              --destination="${IMG}:${TAG_PLAIN}" \
+              --cache=false \
+              --snapshot-mode=redo
         volumeMounts:
           - { name: workspace, mountPath: /workspace }
 
