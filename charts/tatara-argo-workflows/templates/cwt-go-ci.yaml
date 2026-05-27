@@ -13,6 +13,8 @@ spec:
       - { name: ref,       value: "" }
       - { name: sha,       value: "" }
       - { name: prNumber,  value: "" }
+      - { name: provider,  value: "" }
+      - { name: action,    value: "" }
   volumeClaimTemplates:
     - metadata:
         name: workspace

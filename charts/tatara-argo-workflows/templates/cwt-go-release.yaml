@@ -9,10 +9,11 @@ spec:
   onExit: report-exit
   arguments:
     parameters:
-      - { name: repo, value: "" }
-      - { name: ref,  value: "" }
-      - { name: sha,  value: "" }
-      - { name: tag,  value: "" }
+      - { name: repo,     value: "" }
+      - { name: ref,      value: "" }
+      - { name: sha,      value: "" }
+      - { name: provider, value: "" }
+      - { name: action,   value: "" }
   volumeClaimTemplates:
     - metadata:
         name: workspace
@@ -86,6 +87,8 @@ spec:
             cat > ~/.docker/config.json <<JSON
             {"auths":{"{{ .Values.harbor.registry }}":{"auth":"${B64}"}}}
             JSON
+            REF="{{`{{workflow.parameters.ref}}`}}"
+            export GORELEASER_CURRENT_TAG="${REF#refs/tags/}"
             goreleaser release --clean
         volumeMounts:
           - { name: workspace, mountPath: /workspace }

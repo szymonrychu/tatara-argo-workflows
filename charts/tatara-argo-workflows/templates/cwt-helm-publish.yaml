@@ -9,12 +9,13 @@ spec:
   onExit: report-exit
   arguments:
     parameters:
-      - { name: repo,       value: "" }
-      - { name: ref,        value: "" }
-      - { name: sha,        value: "" }
-      - { name: tag,        value: "" }
-      - { name: chartDir,   value: "" }
-      - { name: chartName,  value: "" }
+      - { name: repo,      value: "" }
+      - { name: ref,       value: "" }
+      - { name: sha,       value: "" }
+      - { name: chartDir,  value: "" }
+      - { name: chartName, value: "" }
+      - { name: provider,  value: "" }
+      - { name: action,    value: "" }
   volumeClaimTemplates:
     - metadata:
         name: workspace
@@ -81,7 +82,8 @@ spec:
             apk add --no-cache sed >/dev/null
             CHART_DIR="{{`{{workflow.parameters.chartDir}}`}}"
             CHART_NAME="{{`{{workflow.parameters.chartName}}`}}"
-            TAG_V="{{`{{workflow.parameters.tag}}`}}"
+            REF="{{`{{workflow.parameters.ref}}`}}"
+            TAG_V="${REF#refs/tags/}"
             VER="${TAG_V#v}"
             sed -i "s/^version:.*/version: ${VER}/"     "${CHART_DIR}/Chart.yaml"
             sed -i "s/^appVersion:.*/appVersion: \"${VER}\"/" "${CHART_DIR}/Chart.yaml"
