@@ -86,8 +86,11 @@ spec:
             apk add --no-cache gnupg
             echo "$GPG_PRIVATE_RSA_B64" | base64 -d | gpg --batch --import
             echo "${HARBOR_PASSWORD}" | helm registry login -u "${HARBOR_USERNAME}" --password-stdin {{ .Values.harbor.registry }}
-            cd "{{`{{workflow.parameters.helmfileDir}}`}}"
-            helmfile -e default sync --args "--force-conflicts"
+            REF="{{`{{workflow.parameters.ref}}`}}"
+            TAG_V="${REF#refs/tags/}"
+            TAG_PLAIN="${TAG_V#v}"
+            cd /workspace/src/"{{`{{workflow.parameters.helmfileDir}}`}}"
+            helmfile -e default sync --args "--force-conflicts --set image.tag=${TAG_PLAIN}"
         volumeMounts:
           - { name: workspace, mountPath: /workspace }
 
