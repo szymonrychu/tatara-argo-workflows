@@ -1,0 +1,98 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: tatara-go-ci
+  labels:
+    {{- include "tatara-argo-workflows.labels" . | nindent 4 }}
+spec:
+  entrypoint: main
+  onExit: report-exit
+  arguments:
+    parameters:
+      - { name: repo,      value: "" }
+      - { name: ref,       value: "" }
+      - { name: sha,       value: "" }
+      - { name: prNumber,  value: "" }
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 2Gi
+  templates:
+    - name: main
+      steps:
+        - - name: report-pending
+            templateRef:
+              name: tatara-github-status
+              template: report
+              clusterScope: true
+            arguments:
+              parameters:
+                - { name: repo,        value: "{{`{{workflow.parameters.repo}}`}}" }
+                - { name: sha,         value: "{{`{{workflow.parameters.sha}}`}}" }
+                - { name: state,       value: "pending" }
+                - { name: context,     value: "tatara/ci" }
+                - { name: description, value: "lint + test running" }
+                - { name: targetUrl,   value: "https://workflows.szymonrichert.pl/workflows/{{`{{workflow.namespace}}`}}/{{`{{workflow.name}}`}}" }
+        - - name: clone
+            template: clone
+        - - name: lint
+            template: lint
+        - - name: test
+            template: test
+
+    - name: clone
+      container:
+        image: {{ .Values.images.git | quote }}
+        workingDir: /workspace
+        command: [sh, -c]
+        args:
+          - |
+            set -eux
+            git clone --depth=1 "https://github.com/{{`{{workflow.parameters.repo}}`}}" src
+            cd src
+            git fetch --depth=1 origin "{{`{{workflow.parameters.sha}}`}}" || true
+            git checkout "{{`{{workflow.parameters.sha}}`}}"
+        volumeMounts:
+          - { name: workspace, mountPath: /workspace }
+
+    - name: lint
+      container:
+        image: {{ .Values.images.golangciLint | quote }}
+        workingDir: /workspace/src
+        command: [sh, -c]
+        args:
+          - golangci-lint run ./...
+        volumeMounts:
+          - { name: workspace, mountPath: /workspace }
+
+    - name: test
+      container:
+        image: {{ .Values.images.go | quote }}
+        workingDir: /workspace/src
+        command: [sh, -c]
+        args:
+          - |
+            set -eux
+            go test -race -count=1 ./...
+        volumeMounts:
+          - { name: workspace, mountPath: /workspace }
+
+    - name: report-exit
+      steps:
+        - - name: post
+            templateRef:
+              name: tatara-github-status
+              template: report
+              clusterScope: true
+            arguments:
+              parameters:
+                - { name: repo,        value: "{{`{{workflow.parameters.repo}}`}}" }
+                - { name: sha,         value: "{{`{{workflow.parameters.sha}}`}}" }
+                - { name: state,       value: "{{`{{workflow.status}}`}}" }
+                - { name: context,     value: "tatara/ci" }
+                - { name: description, value: "{{`{{workflow.status}}`}}" }
+                - { name: targetUrl,   value: "https://workflows.szymonrichert.pl/workflows/{{`{{workflow.namespace}}`}}/{{`{{workflow.name}}`}}" }
