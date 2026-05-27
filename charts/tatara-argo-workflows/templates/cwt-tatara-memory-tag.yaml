@@ -182,7 +182,7 @@ spec:
             REF="{{`{{workflow.parameters.ref}}`}}"
             TAG_V="${REF#refs/tags/}"
             TAG_PLAIN="${TAG_V#v}"
-            helmfile -e default sync --args "--force-conflicts --set image.tag=${TAG_PLAIN}"
+            helmfile -e default sync --args "--set image.tag=${TAG_PLAIN}"
         volumeMounts:
           - { name: workspace, mountPath: /workspace }
 
