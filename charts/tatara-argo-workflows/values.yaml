@@ -10,7 +10,7 @@ images:
   git: alpine/git:v2.45.2
   golangciLint: golangci/golangci-lint:v2.11.4
   go: golang:1.25
-  goreleaser: goreleaser/goreleaser:v2.4.4
+  goreleaser: goreleaser/goreleaser:v2.5.1
   buildkit: moby/buildkit:v0.17.0-rootless
   helm: alpine/helm:3.16.2
   helmfile: ghcr.io/helmfile/helmfile:v0.169.1
