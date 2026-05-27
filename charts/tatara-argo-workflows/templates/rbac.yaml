@@ -1,0 +1,25 @@
+{{/*
+RoleBinding granting ns-scoped admin to the argo-workflow SA in this
+namespace. The argo-workflows chart auto-creates the SA + a narrow Role
+(workflowtaskresults only). helmfile-deploy + helm-publish CWTs need to
+create k8s resources (Deployments, Secrets, ConfigMaps, ...) during
+`helmfile sync`, so the SA also needs admin within this namespace.
+
+Scoped to ns (RoleBinding, not ClusterRoleBinding). Other workflow
+namespaces are unaffected.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tatara-argo-workflow-admin
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "tatara-argo-workflows.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflow
+    namespace: {{ .Values.namespace }}

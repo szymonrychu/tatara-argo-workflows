@@ -1,0 +1,8 @@
+[allowlist]
+  description = "false positives in helm template secretKeyRef key names"
+  paths = [
+    "charts/tatara-argo-workflows/templates/cwt-helmfile-deploy.yaml",
+  ]
+  regexes = [
+    "key: GPG_PRIVATE_RSA_B64",
+  ]

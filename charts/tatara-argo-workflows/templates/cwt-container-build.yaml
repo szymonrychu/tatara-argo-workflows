@@ -1,0 +1,116 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: tatara-container-build
+  labels:
+    {{- include "tatara-argo-workflows.labels" . | nindent 4 }}
+spec:
+  entrypoint: main
+  onExit: report-exit
+  arguments:
+    parameters:
+      - { name: repo,      value: "" }
+      - { name: ref,       value: "" }
+      - { name: sha,       value: "" }
+      - { name: imageName, value: "" }
+      - { name: provider,  value: "" }
+      - { name: action,    value: "" }
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 4Gi
+  templates:
+    - name: main
+      steps:
+        - - name: report-pending
+            templateRef:
+              name: tatara-github-status
+              template: report
+              clusterScope: true
+            arguments:
+              parameters:
+                - { name: repo,        value: "{{`{{workflow.parameters.repo}}`}}" }
+                - { name: sha,         value: "{{`{{workflow.parameters.sha}}`}}" }
+                - { name: state,       value: "pending" }
+                - { name: context,     value: "tatara/container" }
+                - { name: description, value: "building amd64 image" }
+                - { name: targetUrl,   value: "https://workflows.szymonrichert.pl/workflows/{{`{{workflow.namespace}}`}}/{{`{{workflow.name}}`}}" }
+        - - name: clone
+            template: clone
+        - - name: build-push
+            template: build-push
+
+    - name: clone
+      container:
+        image: {{ .Values.images.git | quote }}
+        workingDir: /workspace
+        command: [sh, -c]
+        args:
+          - |
+            set -eux
+            git clone --depth=1 "https://github.com/{{`{{workflow.parameters.repo}}`}}" src
+            cd src
+            git fetch --depth=1 origin "{{`{{workflow.parameters.sha}}`}}" || true
+            git checkout "{{`{{workflow.parameters.sha}}`}}"
+        volumeMounts:
+          - { name: workspace, mountPath: /workspace }
+
+    - name: build-push
+      container:
+        image: {{ .Values.images.buildkit | quote }}
+        workingDir: /workspace/src
+        command: [sh, -c]
+        env:
+          - name: HARBOR_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: harbor-robot
+                key: username
+          - name: HARBOR_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: harbor-robot
+                key: password
+        args:
+          - |
+            set -eux
+            mkdir -p ~/.docker
+            B64=$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_PASSWORD" | base64 -w0)
+            cat > ~/.docker/config.json <<JSON
+            {"auths":{"{{ .Values.harbor.registry }}":{"auth":"${B64}"}}}
+            JSON
+            REF="{{`{{workflow.parameters.ref}}`}}"
+            TAG_V="${REF#refs/tags/}"
+            TAG_PLAIN="${TAG_V#v}"
+            IMG="{{ .Values.harbor.registry }}/{{`{{workflow.parameters.imageName}}`}}"
+            buildctl-daemonless.sh build \
+              --frontend dockerfile.v0 \
+              --local context=. \
+              --local dockerfile=. \
+              --opt platform=linux/amd64 \
+              --output type=image,\"name=${IMG}:${TAG_V},${IMG}:${TAG_PLAIN}\",push=true
+        securityContext:
+          seccompProfile:
+            type: Unconfined
+        volumeMounts:
+          - { name: workspace, mountPath: /workspace }
+
+    - name: report-exit
+      steps:
+        - - name: post
+            templateRef:
+              name: tatara-github-status
+              template: report
+              clusterScope: true
+            arguments:
+              parameters:
+                - { name: repo,        value: "{{`{{workflow.parameters.repo}}`}}" }
+                - { name: sha,         value: "{{`{{workflow.parameters.sha}}`}}" }
+                - { name: state,       value: "{{`{{workflow.status}}`}}" }
+                - { name: context,     value: "tatara/container" }
+                - { name: description, value: "{{`{{workflow.status}}`}}" }
+                - { name: targetUrl,   value: "https://workflows.szymonrichert.pl/workflows/{{`{{workflow.namespace}}`}}/{{`{{workflow.name}}`}}" }

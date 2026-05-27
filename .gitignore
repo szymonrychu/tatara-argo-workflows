@@ -1,0 +1,20 @@
+# Helm
+charts/*/charts/
+charts/*/Chart.lock
+
+# Secrets in plaintext are never committed; sops ensures encryption.
+*.secrets.plaintext.yaml
+*.plaintext.yaml
+
+# Worktrees
+.worktrees/
+
+# OS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+
+# Local helmfile build cache
+.helmfile/
