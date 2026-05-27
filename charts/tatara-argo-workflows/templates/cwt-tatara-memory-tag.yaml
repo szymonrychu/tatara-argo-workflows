@@ -81,9 +81,9 @@ spec:
 
     - name: container-build
       container:
-        image: {{ .Values.images.buildkit | quote }}
+        image: {{ .Values.images.kaniko | quote }}
         workingDir: /workspace/src
-        command: [sh, -c]
+        command: [/busybox/sh, -c]
         env:
           - name: HARBOR_USERNAME
             valueFrom:
@@ -97,25 +97,23 @@ spec:
                 key: password
         args:
           - |
-            set -eux
-            mkdir -p ~/.docker
-            B64=$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_PASSWORD" | base64 -w0)
-            cat > ~/.docker/config.json <<JSON
+            set -eu
+            mkdir -p /kaniko/.docker
+            { set +x; B64=$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_PASSWORD" | base64 -w0); } 2>/dev/null
+            cat > /kaniko/.docker/config.json <<JSON
             {"auths":{"{{ .Values.harbor.registry }}":{"auth":"${B64}"}}}
             JSON
             REF="{{`{{workflow.parameters.ref}}`}}"
             TAG_V="${REF#refs/tags/}"
             TAG_PLAIN="${TAG_V#v}"
             IMG="{{ .Values.harbor.registry }}/containers/tatara-memory"
-            buildctl-daemonless.sh build \
-              --frontend dockerfile.v0 \
-              --local context=. \
-              --local dockerfile=. \
-              --opt platform=linux/amd64 \
-              --output type=image,\"name=${IMG}:${TAG_V},${IMG}:${TAG_PLAIN}\",push=true
-        securityContext:
-          seccompProfile:
-            type: Unconfined
+            /kaniko/executor \
+              --context=dir:///workspace/src \
+              --dockerfile=/workspace/src/Dockerfile \
+              --destination="${IMG}:${TAG_V}" \
+              --destination="${IMG}:${TAG_PLAIN}" \
+              --cache=false \
+              --snapshot-mode=redo
         volumeMounts:
           - { name: workspace, mountPath: /workspace }
 
@@ -137,7 +135,7 @@ spec:
                 key: password
         args:
           - |
-            set -eux
+            set -eu
             apk add --no-cache sed >/dev/null
             REF="{{`{{workflow.parameters.ref}}`}}"
             TAG_V="${REF#refs/tags/}"
@@ -149,7 +147,7 @@ spec:
             sed -i "s/^appVersion:.*/appVersion: \"${VER}\"/"  /workspace/chart-work/Chart.yaml
             helm dependency update /workspace/chart-work
             helm package /workspace/chart-work -d /workspace
-            echo "${HARBOR_PASSWORD}" | helm registry login -u "${HARBOR_USERNAME}" --password-stdin {{ .Values.harbor.registry }}
+            printf '%s' "${HARBOR_PASSWORD}" | helm registry login -u "${HARBOR_USERNAME}" --password-stdin {{ .Values.harbor.registry }} 2>&1 | grep -v -i 'password'
             helm push "/workspace/tatara-memory-${VER}.tgz" "oci://{{ .Values.harbor.registry }}/charts"
         volumeMounts:
           - { name: workspace, mountPath: /workspace }
@@ -177,10 +175,10 @@ spec:
                 key: GPG_PRIVATE_RSA_B64
         args:
           - |
-            set -eux
+            set -eu
             apk add --no-cache gnupg
-            echo "$GPG_PRIVATE_RSA_B64" | base64 -d | gpg --batch --import
-            echo "${HARBOR_PASSWORD}" | helm registry login -u "${HARBOR_USERNAME}" --password-stdin {{ .Values.harbor.registry }}
+            { set +x; echo "$GPG_PRIVATE_RSA_B64" | base64 -d | gpg --batch --import; } 2>/dev/null
+            printf '%s' "${HARBOR_PASSWORD}" | helm registry login -u "${HARBOR_USERNAME}" --password-stdin {{ .Values.harbor.registry }} 2>&1 | grep -v -i 'password'
             REF="{{`{{workflow.parameters.ref}}`}}"
             TAG_V="${REF#refs/tags/}"
             TAG_PLAIN="${TAG_V#v}"
